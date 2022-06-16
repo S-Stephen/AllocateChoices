@@ -1,0 +1,12 @@
+﻿CRS ID,Surname,Preferred name,College,,Choice 1,Choice 2,Choice 3,Choice 4,Choice 5,Group,Allocated to
+stu2,firstname2,lastname2,G,,C-jpj1001-2,A-nra27-2,D-cjb19-3,D-aa22-5,D-dl359-2,D,"D-dl359-2
+*"
+stu3,firstname3,lastname3,CHU,,D-jml1010-4,D-ag806-2,D-sdg13-4,,,D,"D-jml1010-4
+*"
+stu4,firstname4,lastname4,Q,,F-sjg30-3,F-rc10001-2,F-cer54-1,,,F,F-sjg30-3
+stu5,firstname5,lastname5,JN,,A-pgt23-1,,,,,A,A-pgt23-1
+stu6,firstname6,lastname6,R,,F-mjfg100-2,B-hjj28-1,F-sjg30-4,,,F,F-mjfg100-2
+stu7,firstname7,lastname7,PEM,,A-jvt24-3,A-msd38-1,A-rg471-2,,,A,A-jvt24-3
+stu8,firstname8,lastname8,JN,,A-rg471-2,,,,,A,A-rg471-2
+stu9,firstname9,lastname9,F,.,D-mag92-2,F-jl221-3,,,,F,F-icl20-3
+stu10,firstname10,lastname10,CHU,,D-mag92-2,C-djc13-3,C-dc29-2,,,D,D-mag92-4
