@@ -1,12 +1,12 @@
-# SharedChoices
+# AllocateChoices
 
 From a set of  project choices distribute the selections to acheive the best outcome (those with the highest total selection order)
 
 The constraints of the system are that:
 
-Each student can choose upto MAXCHOICES projects
-A supervisor is only allowed to supervise upto MAXPROJECTS 
-Each student is to be allocated ONE project
+* Each student can choose upto MAXCHOICES projects
+* A supervisor is only allowed to supervise upto MAXPROJECTS 
+* Each student is to be allocated ONE project
 
 There is also an optimisation of the final allocation set required: 
 
@@ -14,8 +14,8 @@ Maximise the number of lower serial (high preference) that are allocated
 
 Typically:
 
-MAXCHOICES = 5
-MAXPROJECTS = 4
+* MAXCHOICES = 5
+* MAXPROJECTS = 4
 
 # Setup VSC
 
