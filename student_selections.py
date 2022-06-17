@@ -120,6 +120,7 @@ class SelectionList(list):
 
     MAXPROJS = 4
     TIMEOUT = 10
+    MAX_PROJ_STUDENTS = 1
 
     def __init__(self, *args):
         """Provide the constructor with a list of Selections"""
@@ -139,11 +140,15 @@ class SelectionList(list):
         :param call: The call we are pruning the student from
         :type call: integer
         """
-        for sel in list(filter(lambda selection:
-                               (selection.unavailable == 0 and
-                                selection.allocated is False and
-                                selection.project.proj_id == project.proj_id), self)):
-            sel.set_unavailable(call)
+        # allow for two selections per project so first find number already allocated
+        if ( len(list(filter(lambda sel: (sel.project.proj_id == project.proj_id and 
+                                 sel.allocated is True), self )) ) >= self.MAX_PROJ_STUDENTS ):
+
+            for sel in list(filter(lambda selection:
+                                    (selection.unavailable == 0 and
+                                    selection.allocated is False and
+                                    selection.project.proj_id == project.proj_id), self)):
+                sel.set_unavailable(call)
 
     def _prune_student(self, student, call=1):
         """Prune the students non-allocated choices
@@ -210,10 +215,10 @@ class SelectionList(list):
         ) and sel.serial <= maxserial and sel.allocated is False, self))
 
         filtered_projects = Counter(
-            list(map(lambda sel: sel.project.proj_id, filtered_by_serial)))
+            list(map(lambda sel: sel.project, filtered_by_serial)))
         # dict(projectid) = num
 
-        return sorted(filtered_projects, key=filtered_projects.get, reverse=True)
+        return sorted(filtered_projects, key=Counter(filtered_projects).get, reverse=True)
         # sorted(filtered_projects.items(), key=lambda pair: pair[1], reverse=True)
         # orderby num desc -> take first
 
@@ -326,7 +331,7 @@ class SelectionList(list):
                         selection_count.items())).values())
 
 
-        # Allocate the selections in our list
+        # Allocate the selections in our list that are first choice
         flat_list = list(filter(lambda sel : sel.serial == 1, \
             [item for sublist in can_allocate for item in sublist]))
         for sel in flat_list:
@@ -337,6 +342,31 @@ class SelectionList(list):
             found_list = SelectionList(self._copy_allocated_set())
             self.sets_found.append(found_list)
             print('+', end='', flush=True)
+
+    def students_by_popular_projects(self):
+        """
+        Join the list of students with the list of popular projects
+
+        return the students in the order of selections including popular projects
+        """
+        students_crsids=[]
+        students=[]
+        for project in self._popular_projects():
+            #if len(students) < 30:
+            #    print(project)
+            for student in self._students_selected_project(project):
+
+                #if len(students) < 10:
+                #    print(student)
+                if student.crsid not in students_crsids:
+                    students_crsids.append(student.crsid)
+                    # pop will provide students selecting the most popular
+                    #students.insert(0,student)
+                    # pop  will provide students selecting the least popular
+                    students.append(student)
+
+        #print(students)
+        return students
 
     def allocate(self):
         """Find valid allocation SelectionList sets"""
@@ -350,38 +380,43 @@ class SelectionList(list):
         #   Whether the selection sets can be 'split'
         #       can we split the students up into groups that do not overlap?
 
-        students = list(
-            sorted(self._available_students(), key=lambda x: x.crsid, reverse=False))
+        # MORE - Order the student list by those that have chosen the most popular projects
+
 
         signal.signal(signal.SIGALRM, self._timeout_handler)
         signal.alarm(self.TIMEOUT)
 
+        students = self.students_by_popular_projects()
         try:
             self._allocate_backtrack_group_student(students,2)
         except Exception as exc:
             print(f"Exception occured (timeout?): {exc}")
 
-        print(f"{len(self.sets_found)} sets found")
+        print(f"\n{len(self.sets_found)} sets found")
+        
         return self.sets_found
 
 
-    def _students__available_selections(self, student):
+    def _students_available_selections(self, student):
         """The available selections for this student"""
         return filter(lambda sel: sel.student == student, self._available_selections())
+
+    def _projects_available_selections(self, project):
+        """The available selections for this student"""
+        return filter(lambda sel: sel.project == project, self._available_selections())
+
+    def _allocate_backtrack_projects(self, projects, call =1):
+        """
+        Projects do not require a student - therefore this function is not valid
+        """
+        pass
+        
 
     def _allocate_backtrack_group_student(self, students, call=1):
         """
         Backtrack worker for our search
         """
-        # get the next student (we will order then alphabetically for the time being)
-        # Later we can add heurastics
-
-        #if call == 1:
-        #    # self.sets_found = []
-        #    # Our measure of best fit
-        #    self.max_priority = 1000000000
         call = call+1
-
         mystudents = copy.deepcopy(students)
 
         if len(students):
@@ -389,21 +424,21 @@ class SelectionList(list):
         else:
             return
 
-        for sel in self._students__available_selections(student):
-
+        for sel in self._students_available_selections(student):
             self._allocate_selection(sel,call)
-
-            if self._set_complete():
+            # print(f"{call} --- Search selection {sel}")
+            if self._set_complete() and self.total_serial() <= self.max_priority:
                 found_list = SelectionList(self._copy_allocated_set())
                 self.sets_found.append(found_list)
-                print('+', end='', flush=True)
+                self.max_priority = self.total_serial()
+                print('+ '+str(self.total_serial()), end='', flush=True)
 
-            elif self._constraints_not_reached(sel, self.max_priority):
+            elif self._selections_consistent(sel, self.max_priority):
                 self._allocate_backtrack_group_student(mystudents, call)
 
             self.backtrack(call)
 
-    def _constraints_not_reached(self, selection, max_priority):
+    def _selections_consistent(self, selection, max_priority):
         """Test whether we have hit any contraint
 
         Supervisor's max allocations: MAXPROJS

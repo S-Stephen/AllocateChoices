@@ -12,6 +12,7 @@ else:
     selections = load_selections(sys.argv[1])
 
     selections.TIMEOUT=100
+    selections.MAX_PROJ_STUDENTS=2
 
     for selection_set in selections.allocate():
         print()
