@@ -56,3 +56,7 @@ In the root directory
 ```
 pytest --cov=.
 ```
+
+# Notes
+
+Some of the students may not have made choices in which case the student count will be lower than the number of students in the file
