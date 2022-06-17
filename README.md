@@ -48,6 +48,15 @@ The script will timeout after 10 seconds to extend this modify the Class variabl
     selections.TIMEOUT=100
 ```
 
+# Configuration
+
+The search can be configured to allow multiple students to be allocated to a project.  To do this set **MAX_PROJ_STUDENTS** variable eg:
+
+```
+    selections = load_selections(sys.argv[1])
+    selections.MAX_PROJ_STUDENTS=2
+    selections.allocate()
+```
 
 # Tests
 
