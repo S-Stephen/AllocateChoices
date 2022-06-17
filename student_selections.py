@@ -426,7 +426,7 @@ class SelectionList(list):
 
         for sel in self._students_available_selections(student):
             self._allocate_selection(sel,call)
-            print(f"{call} --- Search selection {sel}")
+            # print(f"{call} --- Search selection {sel}")
             if self._set_complete() and self.total_serial() <= self.max_priority:
                 found_list = SelectionList(self._copy_allocated_set())
                 self.sets_found.append(found_list)
