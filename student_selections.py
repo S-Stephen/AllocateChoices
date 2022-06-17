@@ -120,6 +120,7 @@ class SelectionList(list):
 
     MAXPROJS = 4
     TIMEOUT = 10
+    MAX_PROJ_STUDENTS = 1
 
     def __init__(self, *args):
         """Provide the constructor with a list of Selections"""
@@ -141,7 +142,7 @@ class SelectionList(list):
         """
         # allow for two selections per project so first find number already allocated
         if ( len(list(filter(lambda sel: (sel.project.proj_id == project.proj_id and 
-                                 sel.allocated is True), self )) ) >= 2 ):
+                                 sel.allocated is True), self )) ) >= self.MAX_PROJ_STUDENTS ):
 
             for sel in list(filter(lambda selection:
                                     (selection.unavailable == 0 and
@@ -391,7 +392,7 @@ class SelectionList(list):
         except Exception as exc:
             print(f"Exception occured (timeout?): {exc}")
 
-        print(f"{len(self.sets_found)} sets found")
+        print(f"\n{len(self.sets_found)} sets found")
         
         return self.sets_found
 
@@ -425,7 +426,7 @@ class SelectionList(list):
 
         for sel in self._students_available_selections(student):
             self._allocate_selection(sel,call)
-            # print(f"{call} --- Search student: {student.crsid}")
+            print(f"{call} --- Search selection {sel}")
             if self._set_complete() and self.total_serial() <= self.max_priority:
                 found_list = SelectionList(self._copy_allocated_set())
                 self.sets_found.append(found_list)
