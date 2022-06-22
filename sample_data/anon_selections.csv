@@ -68,9 +68,7 @@ stu43,firstname43,lastname43,DOW,,D-mag92-1,F-mjfg100-3,C-pok21-3,F-jl221-1,F-gv
 *"
 stu44,firstname44,lastname44,CC,,F-ml468-2,F-sjg30-1,B-gmb49-2,F-jmh233-1,,F,"F-ml468-2
 *"
-stu45,firstname45,lastname45,R,,F-sma71-3,,"F-mt126-1
-F-jl221-1
-F-jmh233-2",,C-ajk61-1,F,"F-sma71-3
+stu45,firstname45,lastname45,R,,F-sma71-3,F-mt126-1,F-jl221-1,F-jmh233-2,C-ajk61-1,F,,"F-sma71-3
 *"
 stu46,firstname46,lastname46,T,,F-es607-1,F-ml468-1,F-es607-2,F-smg84-1,,F,F-es607-1
 stu47,firstname47,lastname47,JE,,C-jhd25-1,C-mpfs1-5,D-aa22-2,C-cd229-2,C-aas41-2,C,"C-jhd25-1

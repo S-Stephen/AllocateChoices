@@ -21,24 +21,43 @@ Typically:
 
 Run in **Remote Container** This should provide ALL the enviroment required
 
-# Aternative
+# Aternative (local environment)
 
-Python (3.10) 
+Python (3.10) is required
+lp_solve and Python libraries are also required
 
 ```
 pip install requirements.txt
 ```
 
-# Running
+# Running - LP Solve method
+
+The LP solve solution provides an CLI interface allowing the user to configure a list of projects that are able to take multiple students the maximum multiple set by **SelectionLPSolver.MAX_STUDENT_PROJECTS**
+
+The Maximum number of projects which can be alloacted to a supervisor is set by **SelectionLPSolver.MAX_PROJECTS_SUP** TODO provide the ability to set supervisors who are able to take upto a particular number of projects (eg 5, rather than 4). 
+
+Running the LP Solve method will produce an lp file (default: __'lp_solve_file.txt'__) which can be run indepentantly by lp_solve
+
+To run the script on a datafile extarcted from IIBProjects (where lp_filename is optional): 
+
+```
+python lp_solve.py <filename> [lp_filename]
+# for sample_data/anon_selections.csv
+python lp_solve.py sample_data/anon_selections.csv [lp_filename]
+# save the lp_file as 'my_lp_file.txt'
+python lp_solve.py sample_data/anon_selections.csv my_lp_file.txt
+```
+
+# Running - Backtrack method
 
 A number of test files exist (see **sample_data** Dir).
 
 to run a selected file:
 
 ```
-python main.py <filename>
+python bt_solve.py <filename>
 # EG
-python main.py sample_data/anon_selections_twosets
+python bt_solve.py sample_data/anon_selections_twosets.csv
 ```
 
 The script will timeout after 10 seconds to extend this modify the Class variable **SelectionList.TIMEOUT** eg;
