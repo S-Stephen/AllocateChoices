@@ -39,6 +39,7 @@ import re
 # unix only?
 import signal
 
+
 class Project:
     """Project offered"""
 
@@ -46,6 +47,7 @@ class Project:
         self.proj_id = proj_id
         self.supervisor_crsid = supervisor_crsid
         self.project_code = project_code
+        self.allow_multiple = True
 
     def __hash__(self) -> int:
         return self.proj_id
@@ -56,6 +58,24 @@ class Project:
     def __eq__(self, other):
         return self.project_code == other.project_code
 
+    # TODO LP specific
+    def lp_safe(self):
+        """
+        Returns a label safe for use in lp-solve
+        """
+        return self.project_code.replace("-", "_")
+
+    def restrict_multiple(self):
+        """
+        Prevent the project being allocated multiple times
+        """
+        self.allow_multiple = False
+
+    def set_allow_multiple(self):
+        """
+        Allow this project to be allocated multiple times
+        """
+        self.allow_multiple = True
 
 class StudentSelection:
     """Student choice"""
@@ -66,6 +86,7 @@ class StudentSelection:
         self.student = student
         self.project = project
         self.allocated = False
+        # TODO This relates to the backtack search method only - should not be here
         self.unavailable = 0
 
     def set_unavailable(self, call):
@@ -73,12 +94,14 @@ class StudentSelection:
         The value it is marked as is the callid to the allocate method (for backtracking)"""
         self.unavailable = call
 
+    # TODO relates to backtrack - should not be here
     def is_available(self):
         """Is this selection still active
         TODO refactor to be available
         """
         return self.unavailable == 0
 
+    # TODO relates to backtrack - should not be here
     def set_available(self):
         """
         set active
@@ -106,6 +129,10 @@ class StudentSelection:
             " (project) by "+self.project.supervisor_crsid+" allocated: " +\
             allocated+" unavailable: "+str(self.unavailable)
 
+    # TODO This relates to lp_solve only - should not be here
+    def lp_variable(self):
+        """A variable string that can be used in lp_solver files"""
+        return self.student.crsid+"_"+self.project.lp_safe()
 
 Student = namedtuple("Student", "crsid")
 
@@ -118,147 +145,122 @@ class SelectionList(list):
     They may be the full set of selections
     """
 
-    MAXPROJS = 4
-    TIMEOUT = 10
-    MAX_PROJ_STUDENTS = 1
-
     def __init__(self, *args):
         """Provide the constructor with a list of Selections"""
         list.__init__(self, *args)
-        self.sets_found = []
-        self.max_priority = 1000000000
-
-    def _timeout_handler(self,signum,frame):
-        print(f"Timeout ({self.TIMEOUT}) occured {signum} {frame}")
-        raise Exception("TIMEOUT")
-
-    def _prune_project(self, project, call=1):
-        """Prune all unallocated selections containing the project
-
-        :param project: The project that has been allocated elsewhere
-        :type project: Project
-        :param call: The call we are pruning the student from
-        :type call: integer
-        """
-        # allow for two selections per project so first find number already allocated
-        if ( len(list(filter(lambda sel: (sel.project.proj_id == project.proj_id and 
-                                 sel.allocated is True), self )) ) >= self.MAX_PROJ_STUDENTS ):
-
-            for sel in list(filter(lambda selection:
-                                    (selection.unavailable == 0 and
-                                    selection.allocated is False and
-                                    selection.project.proj_id == project.proj_id), self)):
-                sel.set_unavailable(call)
-
-    def _prune_student(self, student, call=1):
-        """Prune the students non-allocated choices
-
-        :param student: The student that has been allocated elsewhere
-        :type student: Student
-        :param call: The call we are pruning the student from
-        :type call: integer"""
-        for sel in list(filter(lambda selection:
-                               (selection.unavailable == 0 and
-                                selection.allocated is False and
-                                selection.student.crsid == student.crsid), self)):
-            sel.set_unavailable(call)
 
     def students(self):
         """Returns all students involved in selections"""
         return set(list(map(lambda selection: selection.student, self)))
 
-    def _available_students(self):
-        """A list of available students left"""
-        return set(list(map(lambda selection: selection.student, self._available_selections())))
-
-    def _available_selections(self):
-        """Selections still active/available"""
-        return list(filter(lambda selection: selection.is_available() is True , self))
-
-    def _sets_still_possible(self):
-        """Are selection sets still possible for this set"""
-
-        return len(self._allocated_selections())+len(self._available_students()) == \
-            len(self.students())
-
-    def _set_complete(self):
-        """Have we complete a selection set"""
-
-        return len(self._allocated_selections()) == len(self.students())
-
-    def _allocated_selections(self):
+    def allocated_selections(self):
         """Selections allocated"""
         return list(filter(lambda selection: selection.is_allocated(), self))
 
-    def missing_students(self):
-        """Report the missing students
-        Those students not in our selection set (ie there selections are still available)
-        :param students: list of students to search for
+    def unallocated_selections(self):
+        """Selections allocated"""
+        return list(filter(lambda selection: selection.is_allocated() is False, self))
+
+    def print_allocated_set(self):
+        """Displays the allocation set found
+        TODO put in an array of valid sets - to then search for BEST"""
+        for sel in self.allocated_selections():
+            print(sel)
+
+    def projects_allocated_multiple(self,n):
         """
-        _available_selections = self._available_selections()
-        students_not_allocated = list(
-            map(lambda selection: selection.student, _available_selections))
-        _allocated_selections = self._allocated_selections()
-        students_allocated = list(
-            map(lambda selections: selections.student, _allocated_selections))
-        students_in_selections = [*students_allocated, *students_not_allocated]
-        return set(self.students()) ^ set(students_in_selections)
+        Report of the projects that have been allocated n time
 
-    def _popular_projects(self, maxserial=100):
-        """returns the most popular project ids in the selections
-
-        :param maxserial: the max serial to consider
-
-        Use this to identify the next project to remove?
+        :param n: number of times the project has been allocated
         """
-        filtered_by_serial = list(filter(lambda sel: sel.is_available(
-        ) and sel.serial <= maxserial and sel.allocated is False, self))
+        project_count={}
+        for sel in self.allocated_selections():
+            if sel.project in project_count:
+                project_count[sel.project]+=1
+            else:
+                project_count[sel.project]=1
 
-        filtered_projects = Counter(
-            list(map(lambda sel: sel.project, filtered_by_serial)))
-        # dict(projectid) = num
+        return dict(filter(lambda elem: elem[1] >= n, project_count.items()))
 
-        return sorted(filtered_projects, key=Counter(filtered_projects).get, reverse=True)
-        # sorted(filtered_projects.items(), key=lambda pair: pair[1], reverse=True)
-        # orderby num desc -> take first
-
-    def _students_selected_project(self, project):
-        """A list of students who have selected a project
-
-        :param project: The project we are interested in
-        :param project: Project
+    def single_student_projects(self):
         """
-        available_selections = self._available_selections()
-        selections_with_project = filter(
-            lambda sel: sel.project.proj_id == project.proj_id, available_selections)
-        return list(map(lambda selection: selection.student, selections_with_project))
+        Return the projects which have been marked as single student
+        """
+        return set(
+            list(
+                filter(lambda selection: selection.allow_multiple is False, \
+                    map(lambda sel: sel.project, self))))
 
-    def _supervisor_projects(self, crsid):
+    def add_single_student_project(self,project_lp_safe):
+        """
+        Adds a project to the single student list
+
+        :param project_lp_safe: The lp safe label for this project
+        """
+        # find the project
+        selections = self.project_selections(project_lp_safe)
+        # hopefully we have one!
+        try:
+            selections[0].project.restrict_multiple()
+        except:
+            pass
+
+    def add_multiple_student_project(self,project_lp_safe):
+        """
+        Removes a project from the single student list
+
+        :param project_lp_safe: The lp safe label for this project
+        """
+        # find the project
+        selections = self.project_selections(project_lp_safe)
+        # hopefully we have one!
+        try:
+            selections[0].project.set_allow_multiple()
+        except:
+            pass
+
+
+    def supervisor_selections(self,crsid):
+        """
+        The selections associated to this supervisor
+
+        :param crsid: supervisor crsid
+        """
+        return list(filter(lambda sel:
+                           sel.project.supervisor_crsid == crsid, self))
+
+    def student_selections(self,crsid):
+        """
+        The selections associated to this student
+
+        :param crsid: student crsid
+        """
+        return list(filter(lambda sel:
+                           sel.student.crsid == crsid, self))
+
+
+    def project_selections(self,project_lp_safe):
+        """
+        The selections associated to this student
+
+        :param project_safe: safe lp label for project
+        """
+        return list(filter(lambda sel:
+                           sel.project.lp_safe() == project_lp_safe, self))
+
+    def supervisor_projects(self, crsid):
         """returns the list of projects this supersior has allocated"""
         return list(filter(lambda sel:
                            sel.project.supervisor_crsid == crsid and sel.allocated is True, self))
 
-    def _copy_allocated_set(self):
-        """return a SelectionList of selections that have been allocated"""
-        return copy.deepcopy(self._allocated_selections())
 
-    def print_allocated_set(self):
-        """Displays the allocation set foun
-        TODO put in an array of valid sets - to then search for BEST"""
-        for sel in self._allocated_selections():
-            print(sel)
-
-    def _print__available_selections(self):
-        """For debug print out the list of selections we still need to allocate"""
-        for sel in self._available_selections():
-            print(sel)
 
     def _serials(self):
         """
         the array of serials associated to the set
         """
-        return list(map(lambda sel: sel.serial, \
-                list(filter(lambda sel: sel.is_allocated() is True, self))))
+        return list(map(lambda sel: sel.serial,
+                        list(filter(lambda sel: sel.is_allocated() is True, self))))
 
     def total_serial(self):
         """
@@ -273,19 +275,170 @@ class SelectionList(list):
         This could be used to find the optimum set ?
         """
 
-    def backtrack(self, call=0):
-        """Re-instate the selections but not if it was the one we tried to allocate"""
-        # unprune
+    def clear_allocations(self):
+        """Remove all the allocations made for this set"""
+        for sel in self:
+            sel.unallocate()
+
+
+    def load_selections(self,filename):
+        """
+        Load selections from the by student list as gathered from IIBprojects app"""
+        # self.selections = SelectionList([])
+        students = []
+        projects = []
+
+        # Tidy these constants up, and where this function goes
+        NUM_PROJECTS = 1
+        NUM_SELECTIONS = 1
+        SELECTION_COLS = [5, 6, 7, 8, 9]
+        rows = 0
+
+        with open(filename, newline='', encoding='utf8') as csvfile:
+            selectionreader = csv.reader(csvfile, delimiter=',', quotechar='"')
+            for row in selectionreader:
+                rows += 1
+                if rows == 1:
+                    continue
+
+                new_student = Student(row[0])
+                students.append(new_student)
+                for sel_row in SELECTION_COLS:
+                    if row[sel_row]:
+                        # Only if the project is not in our project list!
+                        # temporaray project to test whether project exists (by project_code)
+                        # We will be wasting project_ids
+                        tmp_project = Project(NUM_PROJECTS, project_sup(
+                            row[sel_row]), row[sel_row])
+                        proj_index = create_get_project(projects, tmp_project)
+
+                        self.append(
+                            StudentSelection(
+                                NUM_SELECTIONS,
+                                sel_row-SELECTION_COLS[0]+1,
+                                new_student,
+                                projects[proj_index]))
+                        NUM_SELECTIONS += 1
+                        NUM_PROJECTS += 1
+
+class SelectionBacktrackSolver():
+    """
+    Solve the allocation uisng backtrack algorithm
+    """
+
+    TIMEOUT = 10
+    MAX_PROJ_STUDENTS = 1
+    MAXPROJS = 4
+
+    def __init__(self) -> None:
+        self.selection_list = SelectionList([])
+        self.sets_found = []
+        self.max_priority = 1000000000
+
+    def load_selections(self,filename):
+        """
+        Load selections from the by student list as gathered from IIBprojects app
+        """
+        self.selection_list.load_selections(filename)
+
+    def _timeout_handler(self, signum, frame):
+        print(f"Timeout ({self.TIMEOUT}) occured {signum} {frame}")
+        raise Exception("TIMEOUT")
+
+    def students(self):
+        """Returns the students in the selection list"""
+        return self.selection_list.students()
+
+    def _sets_still_possible(self):
+        """Are selection sets still possible for this set"""
+        return len(self.selection_list.allocated_selections())+len(self._available_students()) == \
+            len(self.students())
+
+    def _selections_consistent(self, selection, max_priority):
+        """Test whether we have hit any contraint
+
+        Supervisor's max allocations: MAXPROJS
+        Students without a project
+        Sets no longer possible
+
+        Heuristic total max priority > than already found
+
+        :param selection: StudentSelection we have just attempted to allocate
+        :param max_priority: Lowest sum of serials for a set that has already been identified
+        """
+        num_allocated_supervisor = self.selection_list.supervisor_projects(
+            selection.project.supervisor_crsid)
+
+        return (len(num_allocated_supervisor) <= self.MAXPROJS
+                and len(self.missing_students()) == 0
+                and self._sets_still_possible()
+                and self.selection_list.total_serial() <= max_priority)
+
+    def _prune_project(self, project, call=1):
+        """Prune all unallocated selections containing the project
+
+        :param project: The project that has been allocated elsewhere
+        :type project: Project
+        :param call: The call we are pruning the student from
+        :type call: integer
+        """
+        # allow for two selections per project so first find number already allocated
+        if (len(list(filter(lambda sel: (sel.project.proj_id == project.proj_id and
+                                         sel.allocated is True), self.selection_list))) >= \
+                                             self.MAX_PROJ_STUDENTS):
+
+            for sel in list(filter(lambda selection:
+                                   (selection.unavailable == 0 and
+                                    selection.allocated is False and
+                                    selection.project.proj_id == project.proj_id), \
+                                        self.selection_list)):
+                sel.set_unavailable(call)
+
+    def _prune_student(self, student, call=1):
+        """Prune the students non-allocated choices
+
+        :param student: The student that has been allocated elsewhere
+        :type student: Student
+        :param call: The call we are pruning the student from
+        :type call: integer"""
         for sel in list(filter(lambda selection:
-                               (selection.unavailable >= call), self)):
+                               (selection.unavailable == 0 and
+                                selection.allocated is False and
+                                selection.student.crsid == student.crsid), self.selection_list)):
+            sel.set_unavailable(call)
 
-            if sel.unavailable == call and sel.is_allocated():
-                # keep not available - tried and failed
-                sel.unallocate()
-            else:
-                sel.set_available()
+    def _set_complete(self):
+        """Have we completed a selection set"""
+        return len(self.selection_list.allocated_selections()) == len(self.students())
 
-    def _allocate_selection(self,selection,call):
+    def _available_selections(self):
+        """Selections still active/available"""
+        return list(filter(lambda selection: selection.is_available() is True, self.selection_list))
+
+    def _print_available_selections(self):
+        """For debug print out the list of selections we still need to allocate"""
+        for sel in self._available_selections():
+            print(sel)
+
+    def _available_students(self):
+        """A list of available students left"""
+        return set(list(map(lambda selection: selection.student, self._available_selections())))
+
+    def missing_students(self):
+        """Report the missing students
+        Those students not in our selection set (ie their selections are still available)
+        :param students: list of students to search for
+        """
+        available_selections = self._available_selections()
+        students_not_allocated = list(
+            map(lambda selection: selection.student, available_selections))
+        allocated_selections = self.selection_list.allocated_selections()
+        students_allocated = list(
+            map(lambda selections: selections.student, allocated_selections))
+        students_in_selections = [*students_allocated, *students_not_allocated]
+        return set(self.students()) ^ set(students_in_selections)
+
+    def _allocate_selection(self, selection, call):
         """
         Allocates a selection
         :param selection: StudentSelection to allocate
@@ -307,17 +460,16 @@ class SelectionList(list):
 
         # find the qualifying selections
 
-        def _count_selections(supervisor_count,sel):
+        def _count_selections(supervisor_count, sel):
             if sel.project.supervisor_crsid in supervisor_count:
                 supervisor_count[sel.project.supervisor_crsid].append(sel)
             else:
-                supervisor_count[sel.project.supervisor_crsid]=[sel]
+                supervisor_count[sel.project.supervisor_crsid] = [sel]
             return supervisor_count
 
         # can we reduce the size of the set by allocating any serial 1 choices
         # where the max number of projects for the supervisor > number of selections
-        selection_count = reduce(_count_selections, self, {} )
-
+        selection_count = reduce(_count_selections, self.selection_list, {})
 
         # Find selections that can be allocated
         # The supervisor has < MAXPROJS selections
@@ -325,23 +477,58 @@ class SelectionList(list):
         can_allocate = list(
             dict(
                 filter(
-                    lambda elem: len(elem[1]) <= SelectionList.MAXPROJS and \
-                    len(list(map(lambda sel : sel.project.proj_id,elem[1]))) == \
-                    len(set(map(lambda sel : sel.project.proj_id,elem[1]))), \
-                        selection_count.items())).values())
-
+                    lambda elem: len(elem[1]) <= self.MAXPROJS and
+                    len(list(map(lambda sel: sel.project.proj_id, elem[1]))) ==
+                    len(set(map(lambda sel: sel.project.proj_id, elem[1]))),
+                    selection_count.items())).values())
 
         # Allocate the selections in our list that are first choice
-        flat_list = list(filter(lambda sel : sel.serial == 1, \
-            [item for sublist in can_allocate for item in sublist]))
+        flat_list = list(filter(lambda sel: sel.serial == 1,
+                                [item for sublist in can_allocate for item in sublist]))
         for sel in flat_list:
             if sel.serial == 1:
-                self._allocate_selection(sel,1)
+                self._allocate_selection(sel, 1)
 
         if self._set_complete():
             found_list = SelectionList(self._copy_allocated_set())
             self.sets_found.append(found_list)
             print('+', end='', flush=True)
+
+    def _copy_allocated_set(self):
+        """return a SelectionList of selections that have been allocated"""
+        return copy.deepcopy(self.selection_list.allocated_selections())
+
+
+    def _popular_projects(self, maxserial=100):
+        """returns the most popular project ids in the selections
+
+        :param maxserial: the max serial to consider
+
+        Use this to identify the next project to remove?
+        """
+        filtered_by_serial = list(filter(lambda sel: sel.is_available(
+        ) and sel.serial <= maxserial and sel.allocated is False, self.selection_list))
+
+        filtered_projects = Counter(
+            list(map(lambda sel: sel.project, filtered_by_serial)))
+        # dict(projectid) = num
+
+        return sorted(filtered_projects, key=Counter(filtered_projects).get, reverse=True)
+        # sorted(filtered_projects.items(), key=lambda pair: pair[1], reverse=True)
+        # orderby num desc -> take first
+
+
+
+    def _students_available_selected_project(self, project):
+        """A list of students who have selected a project
+
+        :param project: The project we are interested in
+        :param project: Project
+        """
+        available_selections = self._available_selections()
+        selections_with_project = filter(
+            lambda sel: sel.project.proj_id == project.proj_id, available_selections)
+        return list(map(lambda selection: selection.student, selections_with_project))
 
     def students_by_popular_projects(self):
         """
@@ -349,23 +536,23 @@ class SelectionList(list):
 
         return the students in the order of selections including popular projects
         """
-        students_crsids=[]
-        students=[]
+        students_crsids = []
+        students = []
         for project in self._popular_projects():
-            #if len(students) < 30:
+            # if len(students) < 30:
             #    print(project)
-            for student in self._students_selected_project(project):
+            for student in self._students_available_selected_project(project):
 
-                #if len(students) < 10:
+                # if len(students) < 10:
                 #    print(student)
                 if student.crsid not in students_crsids:
                     students_crsids.append(student.crsid)
                     # pop will provide students selecting the most popular
-                    #students.insert(0,student)
+                    # students.insert(0,student)
                     # pop  will provide students selecting the least popular
                     students.append(student)
 
-        #print(students)
+        # print(students)
         return students
 
     def allocate(self):
@@ -382,35 +569,39 @@ class SelectionList(list):
 
         # MORE - Order the student list by those that have chosen the most popular projects
 
-
         signal.signal(signal.SIGALRM, self._timeout_handler)
         signal.alarm(self.TIMEOUT)
 
         students = self.students_by_popular_projects()
         try:
-            self._allocate_backtrack_group_student(students,2)
+            self._allocate_backtrack_group_student(students, 2)
         except Exception as exc:
             print(f"Exception occured (timeout?): {exc}")
 
         print(f"\n{len(self.sets_found)} sets found")
-        
+
         return self.sets_found
+
+    def backtrack(self, call=0):
+        """Re-instate the selections but not if it was the one we tried to allocate"""
+        # unprune
+        for sel in list(filter(lambda selection:
+                               (selection.unavailable >= call), self.selection_list)):
+
+            if sel.unavailable == call and sel.is_allocated():
+                # keep not available - tried and failed
+                sel.unallocate()
+            else:
+                sel.set_available()
 
 
     def _students_available_selections(self, student):
         """The available selections for this student"""
         return filter(lambda sel: sel.student == student, self._available_selections())
 
-    def _projects_available_selections(self, project):
-        """The available selections for this student"""
-        return filter(lambda sel: sel.project == project, self._available_selections())
-
-    def _allocate_backtrack_projects(self, projects, call =1):
-        """
-        Projects do not require a student - therefore this function is not valid
-        """
-        pass
-        
+    #def _projects_available_selections(self, project):
+    #    """The available selections for this student"""
+    #    return filter(lambda sel: sel.project == project, self._available_selections())
 
     def _allocate_backtrack_group_student(self, students, call=1):
         """
@@ -425,44 +616,180 @@ class SelectionList(list):
             return
 
         for sel in self._students_available_selections(student):
-            self._allocate_selection(sel,call)
+            self._allocate_selection(sel, call)
             # print(f"{call} --- Search selection {sel}")
-            if self._set_complete() and self.total_serial() <= self.max_priority:
+            if self._set_complete() and self.selection_list.total_serial() <= self.max_priority:
                 found_list = SelectionList(self._copy_allocated_set())
                 self.sets_found.append(found_list)
-                self.max_priority = self.total_serial()
-                print('+ '+str(self.total_serial()), end='', flush=True)
+                self.max_priority = self.selection_list.total_serial()
+                print('+ '+str(self.selection_list.total_serial()), end='', flush=True)
 
             elif self._selections_consistent(sel, self.max_priority):
                 self._allocate_backtrack_group_student(mystudents, call)
 
             self.backtrack(call)
 
-    def _selections_consistent(self, selection, max_priority):
-        """Test whether we have hit any contraint
-
-        Supervisor's max allocations: MAXPROJS
-        Students without a project
-        Sets no longer possible
-
-        Heuristic total max priority > than already found
-
-        :param selection: StudentSelection we have just attempted to allocate
-        :param max_priority: Lowest sum of serials for a set that has already been identified
-        """
-        num_allocated_supervisor = self._supervisor_projects(
-            selection.project.supervisor_crsid)
-
-        return (len(num_allocated_supervisor) <= SelectionList.MAXPROJS
-                and len(self.missing_students()) == 0
-                and self._sets_still_possible()
-                and self.total_serial() <= max_priority)
-
     def _allocate_backtrack(self, call=0):
         return self._allocate_backtrack_group_student(call)
 
+class SelectionLPSolver():
+    """
+    Solve the allocation of choices using an LP solver
+    """
+    MAX_STUDENT_PROJECTS = 2
+    MAX_PROJECTS_SUP = 4
 
-# functions to read a CSV file containing the selections and generate the SelectionList
+    def __init__(self) -> None:
+        self.selection_list = SelectionList([])
+
+    def load_selections(self,filename):
+        """
+        Load selections from the by student list as gathered from IIBprojects app
+        """
+        self.selection_list.load_selections(filename)
+
+    def projects_allocated_multiple(self,n):
+        """
+        Report of the projects that have been allocated n time
+
+        :param n: number of times the project has been allocated
+        """
+        return self.selection_list.projects_allocated_multiple(n)
+
+    def single_student_projects(self):
+        """
+        Return the projects which have been marked as single student
+        """
+        return self.selection_list.single_student_projects()
+
+    def add_single_student_project(self,project_lp_safe):
+        """
+        Adds a project to the single student list
+
+        :param project_lp_safe: The lp safe label for this project
+        """
+        self.selection_list.add_single_student_project(project_lp_safe)
+
+    def add_multiple_student_project(self,single_student_project):
+        """
+        Removes a project from the single student list
+
+        :param project_lp_safe: The lp safe label for this project
+        """
+        self.selection_list.add_multiple_student_project(single_student_project)
+
+    def clear_allocations(self):
+        """Remove all the allocations made for this set"""
+        self.selection_list.clear_allocations()
+
+    # TODO move to LP Solver
+    def get_selection_by_lp_variable(self,lp_variable):
+        """
+        Retrieves the selection by the safe_lp label
+        """
+        res = list(filter(lambda sel:
+                           sel.lp_variable() == lp_variable, self.selection_list))
+        # handle empty array
+        return res[0]
+
+    def generate_solve_file(self, filename='lp_solve.lp'):
+        """
+        Creates an LP file
+        This can be run externally or using the commands in this class
+        """
+        #MAX_PROJECTS_SUP = 4
+        #self.MAX_STUDENT_PROJECTS = 2
+
+        objective_function = "min: "
+
+        # The selections
+        declarations = []
+
+        # miniise me
+        priorities = []
+        # total per project
+        # total per supervisor
+        # total per student
+        student_constraints = {}
+        project_constraints = {}
+        project_single_constraints = {}
+        supervisor_constraints = {}
+
+        with open(filename, 'w', encoding='utf-8') as lpfile:
+            selection_list = self.selection_list
+            for selection in selection_list.unallocated_selections():
+                priorities.append(str(selection.serial) +
+                                " "+selection.lp_variable())
+                declarations.append(f"int {selection.lp_variable()}")
+
+                if selection.project.supervisor_crsid not in supervisor_constraints:
+                    crsid=selection.project.supervisor_crsid
+                    selections = list(
+                        map( lambda sel: sel.lp_variable(), \
+                                selection_list.supervisor_selections(crsid) ))
+                    supervisor_constraints[crsid] = selections
+
+                if selection.student.crsid not in student_constraints:
+                    crsid = selection.student.crsid
+                    selections = map(
+                        lambda sel: sel.lp_variable(), \
+                            selection_list.student_selections(crsid))
+                    student_constraints[crsid] = selections
+
+                if selection.project.allow_multiple is True and \
+                    selection.project.lp_safe() not in project_constraints:
+                    project = selection.project.lp_safe()
+                    selections = list(
+                        map( lambda sel: sel.lp_variable(), \
+                            selection_list.project_selections(project)))
+                    project_constraints[project] = selections
+
+                if selection.project.allow_multiple is False and \
+                    selection.project.lp_safe() not in project_single_constraints:
+                    project = selection.project.lp_safe()
+                    selections = map( lambda sel: sel.lp_variable(), \
+                        selection_list.project_selections(project))
+                    project_single_constraints[project] = selections
+
+
+            objective_function += ' + '.join(priorities)
+
+            lpfile.write("\n/*Minimise this*/\n")
+            lpfile.write(objective_function+";\n")
+
+            lpfile.write("\n/*ONE allocation per student*/\n")
+            lpfile.write('\n'.join(list(map( \
+                lambda arr: (' + '.join(arr))+' = 1;', \
+                    list(student_constraints.values()))))+'\n')
+
+            lpfile.write(f"\n/*MAX projects per supervisor: {self.MAX_PROJECTS_SUP}*/\n")
+            supervisor_constraints=dict(
+                filter(lambda elem: len(elem[1]) > self.MAX_PROJECTS_SUP,\
+                    list(supervisor_constraints.items())))
+            lpfile.write('\n'.join(
+                list(map(
+                    lambda arr: (' + '.join(arr))+f" <= {self.MAX_PROJECTS_SUP};", \
+                        supervisor_constraints.values())))+'\n')
+
+            lpfile.write(f"\n/*MAX students per project: {self.MAX_STUDENT_PROJECTS}*/\n")
+            project_constraints=dict(filter(
+                lambda elem: len(elem[1]) > self.MAX_STUDENT_PROJECTS,\
+                    list(project_constraints.items())))
+            lpfile.write('\n'.join(list(map(
+                lambda arr: (' + '.join(arr))+f" <= {self.MAX_STUDENT_PROJECTS};", \
+                    list(project_constraints.values()))))+'\n')
+
+            lpfile.write("\n/*Restricted to single project per student: */\n")
+            lpfile.write('\n'.join(list(map(
+                lambda arr: (' + '.join(arr))+" <= 1;", \
+                    list(project_single_constraints.values()))))+'\n')
+
+            lpfile.write("\n/*selection declarations*/\n")
+            lpfile.write((';\n'.join(declarations))+';\n')
+
+            lpfile.close()
+
+# functions to read a CSV file containing the selections and generate the selection_list
 # CSV student and their choices
 def project_sup(project_code):
     """Extracts a supervisor crsid from a project code"""
@@ -482,46 +809,3 @@ def create_get_project(project_list, project):
         project_list.append(project)
         index = project_list.index(project)
     return index
-
-
-def load_selections(filename):
-    """
-    Load selections from the by student list as gathered from IIBprojects app"""
-    selections = SelectionList([])
-    students = []
-    projects = []
-
-    # Tidy these constants up, and where this function goes
-    NUM_PROJECTS = 1
-    NUM_SELECTIONS = 1
-    SELECTION_COLS = [5, 6, 7, 8, 9]
-    rows = 0
-
-    with open(filename, newline='', encoding='utf8') as csvfile:
-        selectionreader = csv.reader(csvfile, delimiter=',', quotechar='"')
-        for row in selectionreader:
-            rows += 1
-            if rows == 1:
-                continue
-
-            new_student = Student(row[0])
-            students.append(new_student)
-            for sel_row in SELECTION_COLS:
-                if row[sel_row]:
-                    # Only if the project is not in our project list!
-                    # temporaray project to test whether project exists (by project_code)
-                    # We will be wasting project_ids
-                    tmp_project = Project(NUM_PROJECTS, project_sup(
-                        row[sel_row]), row[sel_row])
-                    proj_index = create_get_project(projects, tmp_project)
-
-                    selections.append(
-                        StudentSelection(
-                            NUM_SELECTIONS,
-                            sel_row-SELECTION_COLS[0]+1,
-                            new_student,
-                            projects[proj_index]))
-                    NUM_SELECTIONS += 1
-                    NUM_PROJECTS += 1
-
-    return selections
