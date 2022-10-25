@@ -21,7 +21,7 @@ Typically:
 
 Run in **Remote Container** This should provide ALL the enviroment required
 
-# Aternative (local environment)
+# Alternative (local environment)
 
 Python (3.10) is required
 lp_solve and Python libraries are also required
